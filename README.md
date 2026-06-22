@@ -1,148 +1,125 @@
-# エコーズ・オブ・ビースト (Echoes of Beast)
+# Monster Nexus（プロトタイプ）
 
-オリジナルのモンスター育成・配合RPG。プレイヤーは「調律師」となり、魔法生物
-「エコービースト」を仲間（共鳴勧誘）にし、育成・配合しながら、最大 **4対4** の
-ターン制バトルで洞窟の番人に挑みます。
+完全オリジナルの **モンスター育成 × 4対4 ターン制バトルRPG**。スマホ縦画面（9:16）向けの
+Web プロトタイプです。既存IPの名称・キャラクター・デザイン・文言は一切使用していません。
 
-- **プラットフォーム:** Web / PWA（iPhone Safari を最優先、PCブラウザでも動作）
-- **技術:** TypeScript (strict) + Phaser 4 + Vite + vite-plugin-pwa + Vitest + Playwright
-- **配布:** 静的サイト（GitHub Pages）
-- **バックエンド不要。** セーブは IndexedDB。
-
-> 本作はジャンル（モンスター収集・育成・配合RPG）の仕組みのみを参考にした
-> 完全オリジナル作品です。特定作品の名称・数値・デザイン・データは使用していません。
-> 「仮タイトル」であり、`src/app/config.ts` の `GAME_TITLE` を変えるだけで改名できます。
+- 技術: **Phaser 4 + TypeScript(strict) + Vite**
+- 形式: 縦画面・タッチ操作前提（PCのマウスでも操作可）
+- 画像アセット不要（図形・グラデーション・テキストで現代スマホゲーム風UIを構築）
 
 ---
 
-## クイックスタート
+## セットアップ
 
 ```bash
 npm install
-npm run dev        # 開発サーバ (http://localhost:5173/dq/)
 ```
 
-ブラウザを横長ウィンドウにして遊んでください（縦長だと回転案内が出ます）。
+## 起動
 
-### スクリプト
+```bash
+npm run dev        # http://localhost:5173 で起動
+```
+
+## スマホで確認する方法（同じWi‑Fi）
+
+```bash
+npm run dev:host   # ローカルネットワークに公開（Network: http://192.168.x.x:5173 が表示される）
+```
+
+表示された **Network のURL** をスマホのブラウザで開いてください（PCとスマホが同じWi‑Fiに接続されている必要があります）。
+画面は自動で端末サイズにフィットします（縦画面推奨）。
+
+## その他のスクリプト
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm run dev` | Vite 開発サーバ |
-| `npm run build` | 型チェック + 本番ビルド（PWA生成） |
+| `npm run build` | 型チェック + 本番ビルド（`dist/`） |
 | `npm run preview` | ビルド成果物をローカル配信 |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm test` | Vitest（ゲームロジックの単体テスト） |
-| `npm run e2e` | Playwright（要ブラウザ／後述） |
-| `node scripts/gen-icons.mjs` | プレースホルダーアイコン再生成 |
+| `npm test` | Vitest（バトル/成長ロジックの単体テスト） |
 
 ---
 
-## 操作方法
+## 実装済み機能（MVP）
 
-**横画面でプレイします。** タッチ・マウス・キーボード・ゲームパッド（可能な範囲）に対応。
+- 画面遷移: **タイトル → ホーム → ステージ選択 → バトル → リザルト → ホーム**
+- 9シーン: Boot / Preload / Title / Home / StageSelect / TeamEdit / MonsterDex / Battle / Result
+- **4対4のターン制バトル**（味方最大4 / 敵最大4、素早さ順で行動）
+  - コマンド: **攻撃 / スキル / 防御**、対象は敵/味方カードをタップして選択
+  - スキルはMVPでは各モンスターの先頭スキルを自動使用（拡張しやすい構造）
+  - 敵AIは「最もHPの低い相手を狙う」＋一定確率でスキル使用
+  - 属性相性（火→草→水→火、光⇄闇、無は等倍）・弱点/耐性表示
+  - HPバー、ダメージ数字、被弾シェイク、行動演出、バトルログ
+- **編成**: 6体の初期所持から最大4体を選択（タップで入れ替え、即保存）
+- **モンスター図鑑**: 所持モンスターのステータス一覧（縦スクロール）
+- **ステージ 1〜5**: 敵パーティ・推奨戦力・報酬を `src/data/stages.ts` に定義
+- **育成**: 勝利でコイン/EXP獲得、しきい値でレベルアップ（ステータス上昇）、一部ステージはモンスタードロップ
+- **セーブ**: `localStorage` に所持モンスター・編成・コイン・クリア状況を自動保存
 
-- **タッチ / マウス:** ボタンや対象をタップ。常に「もどる」ボタンを用意。
-- **キーボード:** 方向キー/WASD で項目移動、Enter/Space で決定、Esc/Backspace で戻る。
-  探索シーンでは方向キーで移動、Space で探索を進める。
-- 連打による二重実行はボタン側でデバウンス済み。長押しは不要。
+## バトル仕様の概要
 
-### 基本ループ
+- ステータス: `maxHp / hp / attack / defense / magic / speed / level / rarity / element / skills`
+- 属性: `fire / water / grass / light / dark / neutral`
+- 行動順: 生存している全モンスターを **speed 降順** に並べ、1ラウンドで各自1回行動
+- ダメージ式（独自・README記載）:
 
-1. 拠点でパーティ（最大4体）を編成する
-2. 草原 / 洞窟を探索してモンスターと遭遇する
-3. 最大4対4のターン制バトル（命令・スキル・防御・道具・共鳴勧誘・逃走）
-4. 敵を倒す or **共鳴勧誘**で仲間にする → 経験値・レベルアップ
-5. 拠点で**共鳴融合**して新しいモンスターを生み出す（スキル継承）
-6. 道具屋で補給し、洞窟最奥の**番人（ボス）**を倒すとクリア
+  ```
+  通常攻撃: max(1, round((attack - defense/2) * 乱数(0.85〜1.15) * 属性倍率 [* 防御0.5]))
+  スキル:   max(1, round((skillPower + magic - defense/2) * 乱数 * 属性倍率 [* 防御0.5]))
+  回復:     round(skillPower + magic * 0.6)
+  属性倍率: 有利1.5 / 不利0.75 / それ以外1.0
+  ```
 
-想定プレイ時間: 約30〜60分。
-
----
-
-## iPhone で遊ぶ
-
-1. デプロイ先 URL（例 `https://<ユーザー名>.github.io/dq/`）を **Safari** で開く
-2. 横向きにして数十秒待つ（初回キャッシュ）
-3. 共有メニュー → **「ホーム画面に追加」** でアプリとして追加
-4. ホーム画面アイコンから起動すると全画面（standalone）で動作
-5. **一度オンラインで起動すれば、以降はオフラインでも起動可能**
-
-ノッチ／Dynamic Island／ホームインジケーターは `env(safe-area-inset-*)` で考慮し、
-重要な UI はセーフエリア内に配置しています。
-
-### セーブデータのバックアップ / 復元
-
-- 「セーブ / ロード」画面下部のボタンから:
-  - **バックアップ書き出し:** Web Share API 対応端末では共有、非対応ならJSONをダウンロード
-  - **バックアップ復元:** JSONファイルを選択して読み込み（検証付き）
-- 端末変更・ブラウザのデータ削除に備え、定期的な書き出しを推奨します。
+- 勝敗: 敵全滅で勝利 / 味方全滅で敗北
 
 ---
 
-## セーブ
-
-- 保存先は **IndexedDB**（設定のみ localStorage）。
-- スロット: **オート + 手動3個**。バージョン番号付きで将来のマイグレーションに対応。
-- 一時的に前回正常データをバックアップとして保持し、**破損時は自動復旧**。チェックサム検証あり。
-- **オートセーブ:** 戦闘終了後 / 加入後 / 配合後 / パーティ変更後 / 購入後 / エリア移動後 /
-  ボス撃破後 / アプリが非表示になる直前（`visibilitychange`）。
-- Service Worker 更新時に戦闘中・セーブ中のページを**自動リロードしません**。
-  タイトル画面で「更新があります」を押した時のみ反映します。
-
----
-
-## テスト
-
-```bash
-npm test          # Vitest: 52ケース（ダメージ/属性/経験値/共鳴/融合/継承/編成/道具/セーブ等）
-```
-
-乱数を含むロジックはすべてシード付き擬似乱数（`src/core/rng.ts`）を経由し再現可能。
-`Math.random()` はゲームルール内で使用しません（ESLintで禁止）。
-
-E2E（Playwright）はブラウザバイナリが必要です:
-
-```bash
-npx playwright install --with-deps
-npm run e2e       # 844x390 / 932x430 の横画面、390x844 の縦画面、オフライン起動を確認
-```
-
----
-
-## ビルドと GitHub Pages 公開
-
-```bash
-BASE_PATH=/dq/ npm run build   # dist/ に静的サイト + sw.js + manifest を生成
-```
-
-- Vite の `base` は環境変数 `BASE_PATH`（既定 `/dq/`）で切り替え。ルートドメイン配信なら `/`。
-- `.github/workflows/deploy.yml` が `main` への push で
-  `npm ci → lint → typecheck → test → build → Pages へデプロイ` を実行します。
-- リポジトリの Settings → Pages で「Source: GitHub Actions」を選択してください。
-- Service Worker の `scope` と `start_url` は base（`/dq/`）配下に揃えています。
-
----
-
-## ダメージ計算式（要約）
-
-詳細は [DESIGN.md](./DESIGN.md)。
+## 主要ファイル構成
 
 ```
-物理/魔法: core = power * atk / (def * 0.5 + 5)
-            atk = 物理:攻撃 / 魔法:魔力,  def = 防御
-final = core * 属性倍率 * 特性補正 * 防御(0.5) * 会心(1.5) * 乱数(0.9〜1.1)
-        （ダメージは最低1。0以下や極端値にならないよう設計）
-回復:    heal = power * (1 + 魔力 / 20)
+src/
+  main.ts                  エントリーポイント（Phaser.Game生成）
+  game/
+    GameConfig.ts          Phaser設定（縦画面FITスケール・シーン登録）
+    GameState.ts           進行状態＋localStorageセーブ（共有シングルトン）
+    constants.ts           解像度・色・属性/レアリティ定義
+  data/                    ★ゲームデータ（コードから分離）
+    monsters.ts            モンスター種族テンプレ（9種）＋初期6体
+    skills.ts              スキル定義（10種）
+    stages.ts              ステージ定義（1〜5）
+  systems/                 ★Phaser非依存の純ロジック
+    BattleSystem.ts        4対4バトル進行（ラウンド解決）
+    DamageCalculator.ts    ダメージ/回復/属性相性
+    TurnOrderSystem.ts     素早さ順
+    EnemyAI.ts             敵の行動選択
+    ProgressionSystem.ts   経験値・レベルアップ・モンスター生成
+  ui/                      ★再利用UIコンポーネント
+    Button.ts  Card.ts  HpBar.ts  MonsterCard.ts  BottomNav.ts
+  scenes/                  ★各画面（描画・入力のみ）
+    BootScene / PreloadScene / TitleScene / HomeScene /
+    StageSelectScene / TeamEditScene / MonsterDexScene /
+    BattleScene / ResultScene
+  types/                   型定義（Monster / Skill / Stage / Battle）
+tests/
+  battle.test.ts           バトル・属性・成長の単体テスト
 ```
 
-属性倍率は `0.0(無効) / 0.5〜0.8(耐性) / 1.0(通常) / 1.25〜1.5(弱点)`。UIでは正確な倍率や
-共鳴成功率の数値は出さず、段階表示にしています（開発者モードで実数確認可）。
+設計方針: **戦闘・育成ロジック（systems）は Phaser に依存しない純TS**。Phaser（scenes/ui）は描画と入力のみ。
+状態は `GameState` に集約。これにより将来の機能追加とテストが容易です。
 
 ---
 
-## ライセンス / 素材
+## 今後追加しやすい機能（拡張ポイント）
 
-グラフィックは図形・絵文字グリフによるプレースホルダー、効果音は WebAudio による簡易合成音
-（音声ファイル不要・無くても動作）。商用素材・第三者の著作物は含みません。
+- **捕獲**: バトル勝利時のドロップ枠を捕獲システムへ（`Stage.reward.dropTemplateId` / `ResultScene`）
+- **配合**: `MonsterTemplate` 同士の組み合わせ→新種、`ProgressionSystem` に継承ロジック追加
+- **スキル選択UI**: `BattleScene.onSkill` を複数スキルから選ぶメニューへ（型は対応済み `mpCost` も用意）
+- **状態異常・バフ/デバフ**: `Skill.kind` に `buff/debuff` を用意済み、`BattleSystem` に効果フックを追加
+- **装備**: `Monster` にスロットを追加し、`ProgressionSystem` のステータス計算へ反映
+- **ガチャ / スタミナ / ランキング**: `data/` に確率テーブル等を追加、`GameState` に通貨/スタミナを拡張
+- **アセット**: `PreloadScene.preload()` に画像/音声を追加（進捗バーは実装済み）
+
+すべて「データ（data/）」「ロジック（systems/）」「画面（scenes/）」が分離されているため、
+既存コードを壊さずに段階的に拡張できます。

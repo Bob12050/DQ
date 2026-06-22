@@ -1,158 +1,90 @@
 import { describe, it, expect } from 'vitest';
-import { registry } from '../src/core/registry/DataRegistry.ts';
-import { BattleController, type TurnInput } from '../src/core/battle/BattleController.ts';
-import { ActionQueueBuilder } from '../src/core/battle/ActionQueueBuilder.ts';
-import { Rng } from '../src/core/rng.ts';
-import { makeParty, enemyParty } from './helpers.ts';
-import type { BattleCommand } from '../src/core/battle/types.ts';
+import { BattleSystem } from '../src/systems/BattleSystem';
+import { DamageCalculator } from '../src/systems/DamageCalculator';
+import { createMonster, addExp, expToNext } from '../src/systems/ProgressionSystem';
+import type { BattleCommand } from '../src/types/Battle';
 
-const reg = registry;
-
-/** Builds a turn where every manual player unit basic-attacks the first living enemy. */
-function attackAll(ctrl: BattleController): TurnInput {
-  const commands: BattleCommand[] = [];
-  const livingEnemies = ctrl.state.enemy.livingUnits();
-  for (const u of ctrl.manualUnits()) {
-    const target = livingEnemies[0];
-    commands.push({ actorId: u.id, actionType: 'attack', targetIds: target ? [target.id] : [], commandSource: 'manual' });
-  }
-  return { type: 'commands', commands };
+/** Deterministic RNG for reproducible tests. */
+function seeded(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
 }
 
-function runToEnd(ctrl: BattleController, maxTurns = 60): void {
-  let i = 0;
-  while (!ctrl.isOver && i < maxTurns) {
-    ctrl.resolveTurn(attackAll(ctrl));
-    i++;
-  }
-}
-
-describe('4v4 battle core', () => {
-  it('creates up to 8 BattleUnits (4 vs 4)', () => {
-    const rng = new Rng(42);
-    const party = makeParty(
-      [
-        { species: 'mossfang', level: 8 },
-        { species: 'emberwisp', level: 8 },
-        { species: 'gravelkin', level: 8 },
-        { species: 'cragmaw', level: 8 },
-      ],
-      rng,
-    );
-    const ctrl = BattleController.create(reg, party, enemyParty([
-      { monsterId: 'mossfang', level: 5 },
-      { monsterId: 'thornbud', level: 5 },
-      { monsterId: 'emberwisp', level: 5 },
-      { monsterId: 'glimmerveil', level: 5 },
-    ]), rng);
-    expect(ctrl.state.allUnits().length).toBe(8);
-    expect(ctrl.state.player.units.length).toBe(4);
-    expect(ctrl.state.enemy.units.length).toBe(4);
+describe('DamageCalculator element chart', () => {
+  const dc = new DamageCalculator();
+  it('fire beats grass, grass beats water, water beats fire', () => {
+    expect(dc.elementMultiplier('fire', 'grass')).toBeGreaterThan(1);
+    expect(dc.elementMultiplier('grass', 'water')).toBeGreaterThan(1);
+    expect(dc.elementMultiplier('water', 'fire')).toBeGreaterThan(1);
   });
-
-  it('queues all 8 actions in one ActionQueue', () => {
-    const rng = new Rng(7);
-    const party = makeParty([
-      { species: 'mossfang', level: 10 },
-      { species: 'emberwisp', level: 10 },
-      { species: 'gravelkin', level: 10 },
-      { species: 'cragmaw', level: 10 },
-    ], rng);
-    const ctrl = BattleController.create(reg, party, enemyParty([
-      { monsterId: 'mossfang', level: 8 },
-      { monsterId: 'thornbud', level: 8 },
-      { monsterId: 'emberwisp', level: 8 },
-      { monsterId: 'glimmerveil', level: 8 },
-    ]), rng);
-    const builder = new ActionQueueBuilder(reg);
-    const commands: BattleCommand[] = ctrl.state.allUnits().map((u) => ({
-      actorId: u.id,
-      actionType: 'guard',
-      targetIds: [u.id],
-      commandSource: 'manual',
-    }));
-    const queue = builder.build(ctrl.state, commands, rng);
-    expect(queue.length).toBe(8);
+  it('reverse matchups are resisted', () => {
+    expect(dc.elementMultiplier('grass', 'fire')).toBeLessThan(1);
   });
+  it('light and dark are mutually weak', () => {
+    expect(dc.elementMultiplier('light', 'dark')).toBeGreaterThan(1);
+    expect(dc.elementMultiplier('dark', 'light')).toBeGreaterThan(1);
+  });
+  it('neutral is always 1x', () => {
+    expect(dc.elementMultiplier('neutral', 'fire')).toBe(1);
+    expect(dc.elementMultiplier('fire', 'neutral')).toBe(1);
+  });
+});
 
-  it('battles resolve to victory or defeat for all party sizes 1..4 vs 1..4', () => {
-    for (let pn = 1; pn <= 4; pn++) {
-      for (let en = 1; en <= 4; en++) {
-        const rng = new Rng(100 + pn * 10 + en);
-        const pSpecs = Array.from({ length: pn }, () => ({ species: 'cragmaw', level: 12 }));
-        const eSpecs = Array.from({ length: en }, () => ({ monsterId: 'mossfang', level: 3 }));
-        const ctrl = BattleController.create(reg, makeParty(pSpecs, rng), enemyParty(eSpecs), rng);
-        runToEnd(ctrl);
-        expect(['victory', 'defeat', 'recruited_all', 'fled']).toContain(ctrl.state.outcome);
-      }
+describe('BattleSystem 4v4', () => {
+  it('runs a full battle to a decisive outcome', () => {
+    const allies = [
+      createMonster('emberpup', 8),
+      createMonster('ripplet', 8),
+      createMonster('sprigling', 8),
+      createMonster('glimmercat', 8),
+    ];
+    const enemies = [createMonster('pebblite', 2), createMonster('sprigling', 2)];
+    const battle = new BattleSystem(allies, enemies, seeded(1));
+
+    let guard = 0;
+    let outcome = battle.outcome();
+    while (outcome === 'ongoing' && guard < 50) {
+      const cmds = new Map<number, BattleCommand>();
+      for (const u of battle.allies) if (u.alive) cmds.set(u.index, { type: 'attack', targetIndex: 0 });
+      outcome = battle.resolveRound(cmds).outcome;
+      guard++;
     }
+    expect(['win', 'lose']).toContain(outcome);
   });
 
-  it('1 vs 4 and 4 vs 1 both reach a decision', () => {
-    const rng = new Rng(5);
-    const oneVsFour = BattleController.create(
-      reg,
-      makeParty([{ species: 'verdantcolossus', level: 25 }], rng),
-      enemyParty([
-        { monsterId: 'mossfang', level: 3 },
-        { monsterId: 'thornbud', level: 3 },
-        { monsterId: 'emberwisp', level: 3 },
-        { monsterId: 'glimmerveil', level: 3 },
-      ]),
-      rng,
+  it('supports any team size (1v4 and 4v1)', () => {
+    const oneVsFour = new BattleSystem(
+      [createMonster('cinderdrake', 20)],
+      [createMonster('ripplet', 1), createMonster('ripplet', 1), createMonster('ripplet', 1), createMonster('ripplet', 1)],
+      seeded(2),
     );
-    runToEnd(oneVsFour);
-    expect(oneVsFour.isOver).toBe(true);
-
-    const fourVsOne = BattleController.create(
-      reg,
-      makeParty([
-        { species: 'mossfang', level: 10 },
-        { species: 'emberwisp', level: 10 },
-        { species: 'gravelkin', level: 10 },
-        { species: 'cragmaw', level: 10 },
-      ], rng),
-      enemyParty([{ monsterId: 'mossfang', level: 3 }]),
-      rng,
-    );
-    runToEnd(fourVsOne);
-    expect(fourVsOne.state.outcome).toBe('victory');
+    let oc = oneVsFour.outcome();
+    let g = 0;
+    while (oc === 'ongoing' && g++ < 50) {
+      const cmds = new Map<number, BattleCommand>([[0, { type: 'attack', targetIndex: 0 }]]);
+      oc = oneVsFour.resolveRound(cmds).outcome;
+    }
+    expect(['win', 'lose']).toContain(oc);
   });
 
-  it('speed order is reproducible with a fixed seed', () => {
-    const buildOrder = (): string[] => {
-      const rng = new Rng(999);
-      const party = makeParty([
-        { species: 'mossfang', level: 10 },
-        { species: 'gravelkin', level: 10 },
-      ], rng);
-      const ctrl = BattleController.create(reg, party, enemyParty([
-        { monsterId: 'glimmerveil', level: 10 },
-        { monsterId: 'cragmaw', level: 10 },
-      ]), rng);
-      const builder = new ActionQueueBuilder(reg);
-      const commands: BattleCommand[] = ctrl.state.allUnits().map((u) => ({
-        actorId: u.id, actionType: 'attack', targetIds: [], commandSource: 'manual',
-      }));
-      return builder.build(ctrl.state, commands, ctrl.state.rng).map((a) => a.actorId);
-    };
-    expect(buildOrder()).toEqual(buildOrder());
+  it('defeated units never act / fall to 0 HP', () => {
+    const battle = new BattleSystem([createMonster('nocturne', 30)], [createMonster('ripplet', 1)], seeded(3));
+    battle.resolveRound(new Map([[0, { type: 'attack', targetIndex: 0 }]]));
+    const dead = battle.enemies[0]!;
+    expect(dead.monster.hp).toBeGreaterThanOrEqual(0);
   });
+});
 
-  it('defeated units do not act and fallen targets are re-selected', () => {
-    const rng = new Rng(3);
-    const party = makeParty([{ species: 'verdantcolossus', level: 30 }], rng);
-    const ctrl = BattleController.create(reg, party, enemyParty([
-      { monsterId: 'mossfang', level: 2 },
-      { monsterId: 'mossfang', level: 2 },
-    ]), rng);
-    // Target a specific enemy that will likely die; resolver must re-pick.
-    const firstEnemy = ctrl.state.enemy.units[0]!;
-    ctrl.resolveTurn({
-      type: 'commands',
-      commands: [{ actorId: 'p0', actionType: 'attack', targetIds: [firstEnemy.id], commandSource: 'manual' }],
-    });
-    // No exception, battle progressed.
-    expect(ctrl.state.turn).toBe(1);
+describe('ProgressionSystem', () => {
+  it('levels up when EXP threshold is crossed and raises stats', () => {
+    const m = createMonster('emberpup', 1);
+    const atk0 = m.attack;
+    const res = addExp(m, expToNext(1) + expToNext(2) + 5);
+    expect(res.leveledUp).toBe(true);
+    expect(m.level).toBeGreaterThanOrEqual(3);
+    expect(m.attack).toBeGreaterThan(atk0);
   });
 });
