@@ -64,7 +64,7 @@ class GameStateManager {
   }
 
   private createNewData(): PlayerData {
-    const monsters = STARTER_TEMPLATE_IDS.map((id) => createMonster(id, 3));
+    const monsters = STARTER_TEMPLATE_IDS.map((id) => createMonster(id, 5));
     return {
       version: SAVE_VERSION,
       name: '調律師',

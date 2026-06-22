@@ -6,8 +6,10 @@ import type {
   BattleOutcome,
   BattleUnit,
   RoundResult,
+  ScoutedMonster,
   Side,
 } from '../types/Battle';
+import type { Rarity } from '../types/Monster';
 import { getSkill } from '../data/skills';
 import { DamageCalculator, type Rng } from './DamageCalculator';
 import { TurnOrderSystem } from './TurnOrderSystem';
@@ -29,9 +31,12 @@ function cloneMonster(m: Monster): Monster {
 export class BattleSystem {
   readonly allies: BattleUnit[];
   readonly enemies: BattleUnit[];
+  /** Enemies recruited via the scout command this battle. */
+  readonly scouted: ScoutedMonster[] = [];
   private dmg: DamageCalculator;
   private order: TurnOrderSystem;
   private ai: EnemyAI;
+  private rngFn: Rng;
 
   constructor(allyMonsters: Monster[], enemyMonsters: Monster[], rng: Rng = Math.random) {
     this.allies = allyMonsters.slice(0, 4).map((m, i) => this.makeUnit(m, 'ally', i));
@@ -39,11 +44,12 @@ export class BattleSystem {
     this.dmg = new DamageCalculator(rng);
     this.order = new TurnOrderSystem(rng);
     this.ai = new EnemyAI(rng);
+    this.rngFn = rng;
   }
 
   private makeUnit(m: Monster, side: Side, index: number): BattleUnit {
     const monster = cloneMonster(m);
-    return { monster, side, index, alive: monster.hp > 0, defending: false };
+    return { monster, side, index, alive: monster.hp > 0, defending: false, scouted: false };
   }
 
   outcome(): BattleOutcome {
@@ -93,7 +99,11 @@ export class BattleSystem {
         continue;
       }
 
-      events.push(this.resolveAction(actor, cmd));
+      if (cmd.type === 'scout') {
+        events.push(this.resolveScout(actor, cmd));
+      } else {
+        events.push(this.resolveAction(actor, cmd));
+      }
 
       const oc = this.outcome();
       if (oc !== 'ongoing') return { events, outcome: oc };
@@ -129,6 +139,42 @@ export class BattleSystem {
     const targets = this.resolveEnemyTargets(actor, skill.targetType, cmd.targetIndex);
     for (const t of targets) hits.push(this.applySkill(actor, t, skill));
     return { actorSide: actor.side, actorIndex: actor.index, text: `${actor.monster.name}は${skill.name}！`, hits };
+  }
+
+  /** Base scout success rate by rarity (before HP scaling). */
+  private static SCOUT_BASE: Record<Rarity, number> = {
+    common: 0.55,
+    rare: 0.35,
+    epic: 0.2,
+    legendary: 0.1,
+  };
+
+  /** Scout chance: lower target HP greatly increases success. */
+  scoutChance(target: BattleUnit): number {
+    const base = BattleSystem.SCOUT_BASE[target.monster.rarity];
+    const ratio = target.monster.maxHp > 0 ? target.monster.hp / target.monster.maxHp : 1;
+    const chance = base * (1.4 - ratio * 0.9); // full HP ~0.5x, near-dead ~1.4x
+    return Math.max(0.05, Math.min(0.95, chance));
+  }
+
+  private resolveScout(actor: BattleUnit, cmd: BattleCommand): BattleEvent {
+    const target = this.pickTarget(this.opposing(actor.side), cmd.targetIndex);
+    if (!target) {
+      return { actorSide: actor.side, actorIndex: actor.index, text: `${actor.monster.name}はスカウトしようとしたが相手がいない`, hits: [] };
+    }
+    const chance = this.scoutChance(target);
+    if (this.rngFn() < chance) {
+      target.alive = false;
+      target.scouted = true;
+      this.scouted.push({ templateId: target.monster.templateId, level: target.monster.level });
+      return {
+        actorSide: actor.side,
+        actorIndex: actor.index,
+        text: `${actor.monster.name}のスカウト成功！ ${target.monster.name} が仲間になった！`,
+        hits: [],
+      };
+    }
+    return { actorSide: actor.side, actorIndex: actor.index, text: `${actor.monster.name}は${target.monster.name}のスカウトに失敗した…`, hits: [] };
   }
 
   private pickTarget(team: BattleUnit[], idx?: number): BattleUnit | undefined {

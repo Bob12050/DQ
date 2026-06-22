@@ -78,6 +78,29 @@ describe('BattleSystem 4v4', () => {
   });
 });
 
+describe('Scout system', () => {
+  it('scout chance is higher at low HP', () => {
+    const battle = new BattleSystem([createMonster('emberpup', 10)], [createMonster('ripplet', 5)], seeded(1));
+    const enemy = battle.enemies[0]!;
+    enemy.monster.hp = enemy.monster.maxHp;
+    const full = battle.scoutChance(enemy);
+    enemy.monster.hp = 1;
+    const low = battle.scoutChance(enemy);
+    expect(low).toBeGreaterThan(full);
+  });
+
+  it('a successful scout removes the enemy and records it (rng=0 always succeeds)', () => {
+    const battle = new BattleSystem([createMonster('emberpup', 10)], [createMonster('ripplet', 5)], () => 0);
+    const result = battle.resolveRound(new Map<number, BattleCommand>([[0, { type: 'scout', targetIndex: 0 }]]));
+    expect(battle.enemies[0]!.scouted).toBe(true);
+    expect(battle.enemies[0]!.alive).toBe(false);
+    expect(battle.scouted).toHaveLength(1);
+    expect(battle.scouted[0]!.templateId).toBe('ripplet');
+    // Scouting the last enemy ends the battle in victory.
+    expect(result.outcome).toBe('win');
+  });
+});
+
 describe('ProgressionSystem', () => {
   it('levels up when EXP threshold is crossed and raises stats', () => {
     const m = createMonster('emberpup', 1);
