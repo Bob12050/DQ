@@ -119,22 +119,28 @@ export class BattleScene extends Phaser.Scene {
   private showCommandUi(allyIndex: number): void {
     this.cmdLayer.removeAll(true);
     const unit = this.battle.allies[allyIndex]!;
-    Card.panel(this, GAME_WIDTH / 2, 1090, GAME_WIDTH - 40, 220, { fill: COLORS.panel, radius: 22 });
+    Card.panel(this, GAME_WIDTH / 2, 1095, GAME_WIDTH - 40, 250, { fill: COLORS.panel, radius: 22 });
     this.cmdLayer.add(
-      this.add.text(GAME_WIDTH / 2, 1000, `${unit.monster.name} の行動 （${this.qPtr + 1}/${this.queue.length}）`, { fontSize: '24px', color: TXT.accent }).setOrigin(0.5),
+      this.add.text(GAME_WIDTH / 2, 992, `${unit.monster.name} の行動 （${this.qPtr + 1}/${this.queue.length}）`, { fontSize: '23px', color: TXT.accent }).setOrigin(0.5),
     );
 
-    const y = 1110;
-    const atk = new Button(this, 150, y, '攻撃', () => this.onAttack(allyIndex), { width: 200, height: 96, fontSize: 28, fill: COLORS.accent2 });
     const hasSkill = unit.monster.skills.length > 0;
-    const skl = new Button(this, 360, y, 'スキル', () => this.onSkill(allyIndex), { width: 200, height: 96, fontSize: 28, fill: COLORS.panelLight, enabled: hasSkill });
-    const def = new Button(this, 570, y, '防御', () => this.onDefend(allyIndex), { width: 200, height: 96, fontSize: 28, fill: COLORS.panelLight });
-    this.cmdLayer.add([atk, skl, def]);
+    const r1 = 1070;
+    const r2 = 1162;
+    const atk = new Button(this, 195, r1, '攻撃', () => this.onAttack(allyIndex), { width: 300, height: 84, fontSize: 28, fill: COLORS.accent2 });
+    const skl = new Button(this, 525, r1, 'スキル', () => this.onSkill(allyIndex), { width: 300, height: 84, fontSize: 28, fill: COLORS.panelLight, enabled: hasSkill });
+    const def = new Button(this, 195, r2, '防御', () => this.onDefend(allyIndex), { width: 300, height: 84, fontSize: 28, fill: COLORS.panelLight });
+    const scout = new Button(this, 525, r2, '🎯 スカウト', () => this.onScout(allyIndex), { width: 300, height: 84, fontSize: 26, fill: COLORS.gold, textColor: '#1a1430' });
+    this.cmdLayer.add([atk, skl, def, scout]);
 
     if (this.qPtr > 0) {
-      const back = new Button(this, GAME_WIDTH / 2, 1190, '◀ 前のモンスターへ', () => this.goBack(), { width: 360, height: 56, fontSize: 20, fill: COLORS.panelDark });
+      const back = new Button(this, 110, 992, '◀ 前へ', () => this.goBack(), { width: 170, height: 54, fontSize: 20, fill: COLORS.panelDark });
       this.cmdLayer.add(back);
     }
+  }
+
+  private onScout(allyIndex: number): void {
+    this.enterTargeting('enemy', (targetIndex) => this.setCommand(allyIndex, { type: 'scout', targetIndex }));
   }
 
   private onAttack(allyIndex: number): void {
@@ -233,8 +239,15 @@ export class BattleScene extends Phaser.Scene {
     this.pushLog(ev.text);
     this.pulseActor(ev.actorSide, ev.actorIndex);
     for (const hit of ev.hits) this.applyHit(hit);
+    this.dimDefeated();
     // Pace events (a touch faster when many hits resolved).
     this.time.delayedCall(720, () => this.playEvents(events, i + 1, done));
+  }
+
+  /** Fades out any unit that has left the battle (defeated or scouted). */
+  private dimDefeated(): void {
+    for (const u of this.battle.enemies) if (!u.alive) this.enemyCards[u.index]?.setAlpha(0.35);
+    for (const u of this.battle.allies) if (!u.alive) this.allyCards[u.index]?.setAlpha(0.35);
   }
 
   private pulseActor(side: Side, index: number): void {
@@ -276,6 +289,6 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private endBattle(win: boolean): void {
-    this.scene.start(SCENES.Result, { stageId: this.stageId, win });
+    this.scene.start(SCENES.Result, { stageId: this.stageId, win, scouted: this.battle.scouted });
   }
 }

@@ -97,15 +97,11 @@ export const MONSTER_TEMPLATES: Record<string, MonsterTemplate> = {
   },
 };
 
-/** Template ids the player owns at the start of a new game (6 monsters). */
-export const STARTER_TEMPLATE_IDS: string[] = [
-  'emberpup',
-  'ripplet',
-  'sprigling',
-  'glimmercat',
-  'nocturne',
-  'pebblite',
-];
+/**
+ * Template ids the player owns at the start of a new game.
+ * Starts with a single partner; the rest are collected by scouting in battle.
+ */
+export const STARTER_TEMPLATE_IDS: string[] = ['emberpup'];
 
 export function getTemplate(templateId: string): MonsterTemplate {
   const t = MONSTER_TEMPLATES[templateId];

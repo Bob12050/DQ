@@ -10,14 +10,16 @@ import { addExp, createMonster } from '../systems/ProgressionSystem';
 export class ResultScene extends Phaser.Scene {
   private stageId = '';
   private win = false;
+  private scouted: { templateId: string; level: number }[] = [];
 
   constructor() {
     super(SCENES.Result);
   }
 
-  init(data: { stageId: string; win: boolean }): void {
+  init(data: { stageId: string; win: boolean; scouted?: { templateId: string; level: number }[] }): void {
     this.stageId = data.stageId;
     this.win = data.win;
+    this.scouted = data.scouted ?? [];
   }
 
   create(): void {
@@ -47,6 +49,17 @@ export class ResultScene extends Phaser.Scene {
         }
       }
       lines.push(`✨ 各モンスター EXP +${stage.reward.exp}`);
+
+      // Scouted monsters join the collection (respecting a soft cap).
+      for (const s of this.scouted) {
+        if (GameState.data.monsters.length >= 30) {
+          lines.push('⚠ 手持ちがいっぱいでスカウトを逃がした…');
+          break;
+        }
+        const joined = createMonster(s.templateId, s.level);
+        GameState.addMonster(joined);
+        lines.push(`🎯 ${joined.name} をスカウトした！`);
+      }
 
       // Drop / new recruit.
       if (stage.reward.dropTemplateId && GameState.data.monsters.length < 30) {

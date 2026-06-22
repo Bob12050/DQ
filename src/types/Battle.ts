@@ -2,8 +2,8 @@ import type { Monster } from './Monster';
 
 export type Side = 'ally' | 'enemy';
 
-/** Player command verbs. */
-export type CommandType = 'attack' | 'skill' | 'defend';
+/** Player command verbs. `scout` attempts to recruit a living enemy. */
+export type CommandType = 'attack' | 'skill' | 'defend' | 'scout';
 
 /** A chosen command for one acting unit. */
 export interface BattleCommand {
@@ -26,6 +26,14 @@ export interface BattleUnit {
   alive: boolean;
   /** True for the round if the unit chose to defend. */
   defending: boolean;
+  /** True if this enemy left the battle by being scouted (recruited). */
+  scouted: boolean;
+}
+
+/** A monster recruited via scouting during a battle. */
+export interface ScoutedMonster {
+  templateId: string;
+  level: number;
 }
 
 /** Effect of one action on one target (drives the animation/HP updates). */
