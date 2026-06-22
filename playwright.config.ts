@@ -13,7 +13,7 @@ export default defineConfig({
     timeout: 60_000,
   },
   use: {
-    baseURL: 'http://localhost:5173/dq/',
+    baseURL: 'http://localhost:5173/',
   },
   projects: [
     {

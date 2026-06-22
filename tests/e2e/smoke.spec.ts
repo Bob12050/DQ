@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  */
 
 test('boots to the title screen and starts a new game', async ({ page }) => {
-  await page.goto('/dq/');
+  await page.goto('/');
   // Canvas is created by Phaser.
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
   // The boot-message overlay is removed once data validates and Title loads.
@@ -16,12 +16,12 @@ test('boots to the title screen and starts a new game', async ({ page }) => {
 
 test('portrait viewport still renders the canvas (rotation guidance overlay)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/dq/');
+  await page.goto('/');
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
 });
 
 test('offline reload works after first load (service worker cache)', async ({ page, context }) => {
-  await page.goto('/dq/');
+  await page.goto('/');
   await expect(page.locator('canvas')).toBeVisible({ timeout: 15_000 });
   // Give the service worker a moment to precache.
   await page.waitForTimeout(2000);
