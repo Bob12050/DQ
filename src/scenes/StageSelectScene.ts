@@ -100,6 +100,7 @@ export class StageSelectScene extends Phaser.Scene {
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (!dragging) return;
+      if (this.minScroll >= 0) return; // content fits: don't hijack taps
       const dy = p.y - lastY;
       lastY = p.y;
       this.scrollY = Phaser.Math.Clamp(this.scrollY + dy, this.minScroll, 0);
