@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves the project site under /<repo>/.
-// Override with BASE_PATH env var for other hosts (e.g. "/" for a root domain).
-const base = process.env.BASE_PATH ?? '/dq/';
+// Relative base so the build works at ANY path/case (GitHub Pages project
+// sites are case-sensitive: /DQ/ vs /dq/). Override with BASE_PATH if needed.
+const base = process.env.BASE_PATH ?? './';
 
 export default defineConfig({
   base,

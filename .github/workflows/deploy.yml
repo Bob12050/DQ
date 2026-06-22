@@ -27,11 +27,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - name: Build (GitHub Pages base path)
+      - name: Build (relative base — works at any Pages path/case)
         run: npm run build
-        env:
-          # Served from https://<user>.github.io/dq/
-          BASE_PATH: /dq/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
