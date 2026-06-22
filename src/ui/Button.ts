@@ -50,12 +50,18 @@ export class Button extends Phaser.GameObjects.Container {
     this.add([this.gfx, this.label]);
     this.redraw();
 
+    // Enlarged hit area (padding) so near-misses still register on touch.
+    const pad = 14;
     this.setSize(this.boxW, this.boxH);
     this.setInteractive(
-      new Phaser.Geom.Rectangle(-this.boxW / 2, -this.boxH / 2, this.boxW, this.boxH),
+      new Phaser.Geom.Rectangle(-this.boxW / 2 - pad, -this.boxH / 2 - pad, this.boxW + pad * 2, this.boxH + pad * 2),
       Phaser.Geom.Rectangle.Contains,
     );
-    this.on('pointerdown', () => this.press());
+    // Mobile-reliable tap: visual feedback on down, action on up (release on target).
+    this.on('pointerdown', () => this.onDown());
+    this.on('pointerup', () => this.onUp());
+    this.on('pointerout', () => this.resetVisual());
+    this.on('pointerupoutside', () => this.resetVisual());
     scene.add.existing(this);
   }
 
@@ -74,20 +80,27 @@ export class Button extends Phaser.GameObjects.Container {
     return this._enabled;
   }
 
-  private press(): void {
+  private armed = false;
+
+  private onDown(): void {
     if (!this._enabled) return;
+    this.armed = true;
+    this.setScale(0.95);
+  }
+
+  private onUp(): void {
+    this.resetVisual();
+    if (!this._enabled || !this.armed) return;
+    this.armed = false;
     const now = performance.now();
-    if (now - this.lastFire < 260) return;
+    if (now - this.lastFire < 200) return; // debounce accidental double taps
     this.lastFire = now;
-    // Tap-scale pulse.
-    this.scene.tweens.add({
-      targets: this,
-      scale: 0.94,
-      duration: 70,
-      yoyo: true,
-      ease: 'Quad.easeOut',
-    });
     this.onClick();
+  }
+
+  private resetVisual(): void {
+    this.armed = false;
+    this.setScale(1);
   }
 
   private redraw(): void {
